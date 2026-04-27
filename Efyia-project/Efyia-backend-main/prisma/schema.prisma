@@ -1,0 +1,522 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(CLIENT)
+  status    Status   @default(ACTIVE)
+  stripePaymentMethodId String?
+  stripePaymentMethodBrand String?
+  stripePaymentMethodLast4 String?
+  stripePaymentMethodExpMonth Int?
+  stripePaymentMethodExpYear Int?
+  stripePaymentMethodSavedAt DateTime?
+  stripePaymentMethodStudioId Int?
+  stripeCustomerId      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings     Booking[]
+  reviews      Review[]
+  favorites    Favorite[]
+  studios      Studio[]      @relation("StudioOwner")
+  transactions Transaction[]
+  sentMessages BookingMessage[] @relation("UserMessages")
+  emailDomains EmailDomain[]   @relation("EmailDomainCreator")
+  emailAliases EmailAlias[]    @relation("EmailAliasCreator")
+  emailEvents  EmailEvent[]    @relation("EmailEventActor")
+  studioMemberships StudioMember[]
+
+  @@map("users")
+}
+
+model Studio {
+  id           Int      @id @default(autoincrement())
+  slug         String   @unique
+  name         String
+  description  String
+  address      String
+  addressLine1 String?
+  addressLine2 String?
+  city         String
+  state        String
+  zip          String
+  postalCode   String?
+  country      String?
+  publicLocationLabel String?
+  arrivalInstructions String?
+  lat          Float?
+  lng          Float?
+  latitude     Float?
+  longitude    Float?
+  pricePerHour Float
+  rating       Float    @default(0)
+  reviewCount  Int      @default(0)
+  featured     Boolean  @default(false)
+  verified     Boolean  @default(false)
+  color        String   @default("#62f3d4")
+  ownerId      Int
+  owner        User     @relation("StudioOwner", fields: [ownerId], references: [id])
+
+  tags         String[]
+  amenities    String[]
+  equipment    String[]
+  sessionTypes String[]
+
+  // ─── Branding / customization ────────────────────────────────────────────────
+  richDescription String?
+  logoUrl         String?
+  coverUrl        String?
+  accentColor     String   @default("#62f3d4")
+  themeOverride   String?
+  fontPairing     String   @default("modern")
+  layoutType      String   @default("minimal")
+  socialLinks     Json?
+  contactInfo     Json?
+  services        Json?
+  sectionOrder    Json?
+  hiddenSections  Json?
+
+  // ─── Extended profile fields ──────────────────────────────────────────────
+  genres       String[]
+  gallery      Json?
+  credits      Json?
+  achievements Json?
+  portfolio    Json?
+  team         Json?
+  studioSpecs  Json?
+  bookingInfo  Json?
+  testimonials Json?
+
+  // ─── Stripe Connect ───────────────────────────────────────────────────────
+  stripeConnectAccountId    String?
+  stripeConnectStatus       ConnectStatus @default(NOT_CONNECTED)
+  stripeChargesEnabled      Boolean      @default(false)
+  stripePayoutsEnabled      Boolean      @default(false)
+  stripeDetailsSubmitted    Boolean      @default(false)
+  stripeOnboardingComplete  Boolean      @default(false)
+  stripeOnboardingStartedAt DateTime?
+  stripeActivatedAt         DateTime?
+
+  bookings           Booking[]
+  reviews            Review[]
+  favorites          Favorite[]
+  transactions       Transaction[]
+  availabilityBlocks AvailabilityBlock[]
+  schedules          StudioSchedule[]
+  emailDomains       EmailDomain[]
+  members            StudioMember[]
+  websites           Website[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("studios")
+}
+
+model StudioMember {
+  id           Int      @id @default(autoincrement())
+  studioId     Int
+  studio       Studio   @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  userId       Int?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email        String
+  role         TeamRole @default(ENGINEER)
+  inviteStatus InviteStatus @default(PENDING)
+  inviteToken  String?  @unique
+  inviteExpiredAt DateTime?
+  acceptedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([studioId, email])
+  @@map("studio_members")
+}
+
+model Website {
+  id           Int      @id @default(autoincrement())
+  studioId     Int
+  studio       Studio   @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  subdomain    String
+  customDomain String?
+  domainStatus String?
+  dnsConfigured Boolean @default(false)
+  globalSettings Json?
+  pages        WebsitePage[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([studioId, subdomain])
+  @@map("websites")
+}
+
+model WebsitePage {
+  id        Int      @id @default(autoincrement())
+  websiteId Int
+  website   Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  slug      String
+  title     String
+  isHome    Boolean  @default(false)
+  isPublished Boolean @default(false)
+  navLabel  String?
+  sortOrder Int      @default(0)
+  sections  WebsiteSection[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([websiteId, slug])
+  @@map("website_pages")
+}
+
+model WebsiteSection {
+  id        Int      @id @default(autoincrement())
+  pageId    Int
+  page      WebsitePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      String
+  sortOrder Int      @default(0)
+  isHidden  Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("website_sections")
+}
+
+model StripeEvent {
+  id             String   @id @default(uuid()) @map("id")
+  stripeEventId  String   @unique @map("stripe_event_id")
+  eventType      String   @map("event_type")
+  accountId      String?  @map("account_id")
+  processed      Boolean  @default(false) @map("processed")
+  payload        Json?    @map("payload")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("stripe_events")
+}
+
+model Booking {
+  id                    Int           @id @default(autoincrement())
+  studioId              Int
+  studio                Studio        @relation(fields: [studioId], references: [id])
+  userId                Int
+  user                  User          @relation(fields: [userId], references: [id])
+  sessionType           String
+  date                  String
+  time                  String
+  hours                 Int
+  subtotal              Float
+  platformFee           Float
+  total                 Float
+  status                BookingStatus @default(PENDING)
+  stripePaymentIntentId String?
+  transactions          Transaction[]
+  files                 BookingFile[]
+  messages              BookingMessage[]
+  depositAmount         Float?
+  depositPercent        Int?
+  depositPaid           Boolean       @default(false)
+  finalPaymentDue       String?
+  finalPaymentIntentId  String?
+  finalPaymentPaid      Boolean       @default(false)
+  stripePaymentMethodId String?
+  stripeCustomerId      String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@map("bookings")
+}
+
+model Transaction {
+  id                    Int               @id @default(autoincrement())
+  bookingId             Int
+  booking               Booking           @relation(fields: [bookingId], references: [id])
+  stripePaymentIntentId String            @unique
+  stripeTransferId      String?
+  stripeRefundId        String?
+  paymentType           TransactionPaymentType @default(FULL)
+  // All amounts stored in dollars (not cents)
+  amount                Float
+  platformFee           Float
+  netAmount             Float
+  currency              String            @default("usd")
+  status                TransactionStatus @default(PENDING)
+  studioId              Int
+  studio                Studio            @relation(fields: [studioId], references: [id])
+  userId                Int
+  user                  User              @relation(fields: [userId], references: [id])
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@map("transactions")
+}
+
+model AvailabilityBlock {
+  id        Int      @id @default(autoincrement())
+  studioId  Int
+  studio    Studio   @relation(fields: [studioId], references: [id])
+  date      String   // YYYY-MM-DD
+  startTime String   // HH:MM
+  endTime   String   // HH:MM
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@map("availability_blocks")
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  studioId   Int
+  studio     Studio   @relation(fields: [studioId], references: [id])
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+  rating     Int
+  content    String
+  ownerReply String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studioId, userId])
+  @@map("reviews")
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  studioId  Int
+  studio    Studio   @relation(fields: [studioId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, studioId])
+  @@map("favorites")
+}
+
+enum Role {
+  ADMIN
+  OWNER
+  CLIENT
+}
+
+enum Status {
+  ACTIVE
+  SUSPENDED
+}
+
+enum BookingStatus {
+	DRAFT
+  PENDING
+  CONFIRMED
+  AWAITING_FINAL_PAYMENT
+  COMPLETED
+  CANCELLED
+}
+
+enum ConnectStatus {
+  NOT_CONNECTED
+  PENDING
+  RESTRICTED
+  ACTIVE
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum TransactionPaymentType {
+  FULL
+  DEPOSIT
+  FINAL
+}
+
+enum EmailDomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum EmailDnsStatus {
+  PENDING
+  PARTIAL
+  VERIFIED
+  FAILED
+}
+
+enum EmailDeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  BOUNCED
+  DROPPED
+  FAILED
+  OPENED
+  CLICKED
+}
+
+enum DomainSourceType {
+  EXTERNAL_CONNECTED
+  EFYIA_REGISTERED
+}
+
+enum DomainProviderType {
+  MANUAL
+  RESELLER
+  CLOUDFLARE
+  OTHER
+}
+
+enum DomainRegistrationStatus {
+  NOT_APPLICABLE
+  PENDING
+  ACTIVE
+  TRANSFER_PENDING
+  EXPIRED
+  FAILED
+}
+
+enum EmailEligibilityStatus {
+  PENDING
+  ELIGIBLE
+  INELIGIBLE
+}
+
+enum TeamRole {
+  OWNER
+  MANAGER
+  ENGINEER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+
+model StudioSchedule {
+  id        Int     @id @default(autoincrement())
+  studioId  Int
+  studio    Studio  @relation(fields: [studioId], references: [id])
+  dayOfWeek Int
+  openTime  String
+  closeTime String
+  isOpen    Boolean @default(true)
+
+  @@unique([studioId, dayOfWeek])
+  @@map("studio_schedules")
+}
+
+model BookingFile {
+  id         Int      @id @default(autoincrement())
+  bookingId  Int
+  booking    Booking  @relation(fields: [bookingId], references: [id])
+  uploadedBy Int
+  fileName   String
+  fileUrl    String
+  fileSize   Int?
+  mimeType   String?
+  createdAt  DateTime @default(now())
+
+  @@map("booking_files")
+}
+
+model BookingMessage {
+  id        Int      @id @default(autoincrement())
+  bookingId Int
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  senderId  Int
+  sender    User     @relation("UserMessages", fields: [senderId], references: [id])
+  message   String
+  createdAt DateTime @default(now())
+
+  @@map("booking_messages")
+}
+
+model EmailDomain {
+  id               Int               @id @default(autoincrement())
+  studioId         Int               @map("studio_id")
+  studio           Studio            @relation(fields: [studioId], references: [id])
+  createdByUserId  Int               @map("created_by_user_id")
+  createdBy        User              @relation("EmailDomainCreator", fields: [createdByUserId], references: [id])
+  domain           String            @unique
+  provider         String            @default("mailgun")
+  sourceType       DomainSourceType  @default(EXTERNAL_CONNECTED) @map("source_type")
+  providerType     DomainProviderType @default(MANUAL) @map("provider_type")
+  providerDomainId String?           @map("provider_domain_id")
+  registrationStatus DomainRegistrationStatus @default(NOT_APPLICABLE) @map("registration_status")
+  domainStatus     EmailDomainStatus @default(PENDING) @map("domain_status")
+  verificationStatus EmailDomainStatus @default(PENDING) @map("verification_status")
+  dnsStatus        EmailDnsStatus    @default(PENDING) @map("dns_status")
+  emailEligibilityStatus EmailEligibilityStatus @default(PENDING) @map("email_eligibility_status")
+  aliasEligibilityStatus EmailEligibilityStatus @default(PENDING) @map("alias_eligibility_status")
+  setupStatus      String            @default("pending_dns") @map("setup_status")
+  requiredDns      Json?             @map("required_dns")
+  verificationMeta Json?             @map("verification_meta")
+  lastVerifiedAt   DateTime?         @map("last_verified_at")
+  aliases          EmailAlias[]
+  events           EmailEvent[]
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@index([studioId])
+  @@index([createdByUserId])
+  @@map("email_domains")
+}
+
+model EmailAlias {
+  id              Int         @id @default(autoincrement())
+  domainId        Int         @map("domain_id")
+  domain          EmailDomain @relation(fields: [domainId], references: [id])
+  localPart       String      @map("local_part")
+  fullEmail       String      @unique @map("full_email")
+  forwardTo       String      @map("forward_to")
+  providerAliasId String?     @map("provider_alias_id")
+  enabled         Boolean     @default(true)
+  createdByUserId Int         @map("created_by_user_id")
+  createdBy       User        @relation("EmailAliasCreator", fields: [createdByUserId], references: [id])
+  events          EmailEvent[]
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@unique([domainId, localPart])
+  @@index([createdByUserId])
+  @@map("email_aliases")
+}
+
+model EmailEvent {
+  id                Int                 @id @default(autoincrement())
+  domainId          Int?                @map("domain_id")
+  domain            EmailDomain?        @relation(fields: [domainId], references: [id])
+  aliasId           Int?                @map("alias_id")
+  alias             EmailAlias?         @relation(fields: [aliasId], references: [id])
+  actorUserId       Int?                @map("actor_user_id")
+  actorUser         User?               @relation("EmailEventActor", fields: [actorUserId], references: [id])
+  studioId          Int?                @map("studio_id")
+  eventType         String               @map("event_type")
+  providerMessageId String?             @map("provider_message_id")
+  providerEventId   String?             @map("provider_event_id")
+  deliveryStatus    EmailDeliveryStatus  @default(QUEUED) @map("delivery_status")
+  errorMessage      String?             @map("error_message")
+  metadata          Json?
+  payload           Json?
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([domainId])
+  @@index([aliasId])
+  @@index([actorUserId])
+  @@index([studioId])
+  @@map("email_events")
+}

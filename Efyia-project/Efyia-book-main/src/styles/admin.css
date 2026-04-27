@@ -1,0 +1,253 @@
+.admin-shell {
+  min-height: 100vh;
+  background: #090b0e;
+  color: #d7dde3;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.admin-sidebar {
+  border-right: 1px solid #1b242d;
+  background: linear-gradient(180deg, #0d1116 0%, #0a0e13 100%);
+  padding: 1.25rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.admin-brand {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f5f7fa;
+  margin-bottom: 1.25rem;
+}
+
+.admin-user-pill {
+  border: 1px solid #283440;
+  border-radius: 10px;
+  background: #111820;
+  padding: 0.7rem;
+  margin-bottom: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.admin-nav {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.admin-nav button {
+  border: 1px solid #26313c;
+  border-radius: 10px;
+  background: #0f161d;
+  color: #c7d0d9;
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.admin-nav button.is-active {
+  border-color: #6dc2a3;
+  background: rgba(109, 194, 163, 0.16);
+  color: #d8f6ec;
+}
+
+.admin-main {
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-topbar h1 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.admin-subtle {
+  color: #83919d;
+  font-size: 0.85rem;
+}
+
+.admin-toast {
+  border: 1px solid #35513f;
+  background: rgba(109, 194, 163, 0.12);
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.admin-grid-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-stat {
+  border: 1px solid #1f2a34;
+  background: #10161d;
+  border-radius: 12px;
+  padding: 0.85rem;
+}
+
+.admin-stat strong {
+  display: block;
+  font-size: 1.2rem;
+}
+
+.admin-panel {
+  border: 1px solid #1f2a34;
+  background: #0f141b;
+  border-radius: 14px;
+  padding: 0.95rem;
+}
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.admin-toolbar input,
+.admin-toolbar select {
+  min-width: 160px;
+  width: auto;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  background: #121a22;
+  border: 1px solid #25313c;
+  color: #dce3ea;
+}
+
+.admin-table-wrap {
+  overflow: auto;
+  border: 1px solid #1f2a34;
+  border-radius: 10px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.58rem 0.6rem;
+  border-bottom: 1px solid #1b242d;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.admin-table th {
+  color: #9ca9b5;
+  font-weight: 700;
+  background: #121920;
+  position: sticky;
+  top: 0;
+}
+
+.admin-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-btn {
+  border: 1px solid #2a3743;
+  background: #131b23;
+  color: #d8dee5;
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.admin-btn-danger {
+  border-color: #6c2b2b;
+  color: #f7b7b7;
+}
+
+.admin-btn-primary {
+  border-color: #3d6856;
+  color: #d9f5ea;
+  background: rgba(109, 194, 163, 0.14);
+}
+
+.admin-pager {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.68);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+
+.admin-modal {
+  width: min(560px, calc(100vw - 2rem));
+  border: 1px solid #283440;
+  border-radius: 12px;
+  background: #0f141b;
+  padding: 1rem;
+}
+
+.admin-modal h3 {
+  margin-top: 0;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-form-grid .full {
+  grid-column: span 2;
+}
+
+.admin-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+@media (max-width: 980px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid .full {
+    grid-column: auto;
+  }
+}
