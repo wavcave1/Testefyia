@@ -77,6 +77,22 @@ function getServiceForSession(studio, sessionType) {
   );
 }
 
+function getStudioSessionOptions(studio) {
+  const sessionTypes = Array.isArray(studio?.sessionTypes)
+    ? studio.sessionTypes.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+
+  if (sessionTypes.length) {
+    return [...new Set(sessionTypes)];
+  }
+
+  const serviceTypes = Array.isArray(studio?.services)
+    ? studio.services.map((service) => String(service?.name || '').trim()).filter(Boolean)
+    : [];
+
+  return [...new Set(serviceTypes)];
+}
+
 // ─── Cancellation Policy Modal ────────────────────────────────────────────────
 function CancellationPolicyModal({ policy, studioName, onAgree, onDecline }) {
   return (
@@ -292,11 +308,7 @@ export default function BookingDirectPage() {
       .then((data) => {
         setStudio(data);
 
-        const serviceTypes = (data.services || []).map((s) => s.name).filter(Boolean);
-        const types =
-          Array.isArray(data.sessionTypes) && data.sessionTypes.length
-            ? data.sessionTypes
-            : serviceTypes;
+        const types = getStudioSessionOptions(data);
 
         setSessionType(types[0] || '');
         setStudioLoading(false);
@@ -328,10 +340,9 @@ export default function BookingDirectPage() {
     );
   }
 
-  const availableSessionTypes =
-    Array.isArray(studio.sessionTypes) && studio.sessionTypes.length
-      ? studio.sessionTypes
-      : (studio.services || []).map((s) => s.name).filter(Boolean);
+  const availableSessionTypes = getStudioSessionOptions(studio);
+  const hasAvailableSessionTypes = availableSessionTypes.length > 0;
+  const hasValidSessionType = hasAvailableSessionTypes && availableSessionTypes.includes(sessionType);
 
   const pricePerHour = getPriceForSession(studio, sessionType) || studio.pricePerHour || 0;
   const selectedService = getServiceForSession(studio, sessionType);
@@ -355,7 +366,9 @@ export default function BookingDirectPage() {
       errors.date = 'Date cannot be in the past.';
     }
 
-    if (!sessionType) {
+    if (!hasAvailableSessionTypes) {
+      errors.sessionType = 'No session types are available for this studio.';
+    } else if (!hasValidSessionType) {
       errors.sessionType = 'Please select a session type.';
     }
 
@@ -396,9 +409,22 @@ export default function BookingDirectPage() {
   };
 
   const confirmBooking = async () => {
+    const errors = validateStep1();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setStep(1);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError('');
     setPaymentIntentError('');
+
+    if (!hasValidSessionType) {
+      setSubmitError('Please select an available session type before booking.');
+      setSubmitting(false);
+      return;
+    }
 
     let created;
 
@@ -559,8 +585,11 @@ export default function BookingDirectPage() {
                     <select
                       value={sessionType || ''}
                       onChange={(e) => setSessionType(e.target.value)}
+                      disabled={!hasAvailableSessionTypes}
                     >
-                      <option value="">Select session type</option>
+                      <option value="">
+                        {hasAvailableSessionTypes ? 'Select session type' : 'No session types available'}
+                      </option>
                       {availableSessionTypes.map((item) => {
                         const servicePrice = getPriceForSession(studio, item);
 
@@ -678,7 +707,7 @@ export default function BookingDirectPage() {
                   type="button"
                   className="eyf-button"
                   onClick={goToStep2}
-                  disabled={submitting || checkingAvailability}
+                  disabled={submitting || checkingAvailability || !hasValidSessionType}
                 >
                   {checkingAvailability ? 'Checking availability...' : 'Continue'}
                 </button>
