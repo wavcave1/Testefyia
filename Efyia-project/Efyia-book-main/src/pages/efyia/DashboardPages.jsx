@@ -402,13 +402,14 @@ function hasFinalPaymentRequest(booking) {
 }
 
 // ─── Client booking rows ──────────────────────────────────────────────────────
-function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioIds = new Set(), showToast }) {
+function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioIds = new Set(), showToast, onRefreshBookings }) {
   const [confirmCancel, setConfirmCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [finalPaymentBooking, setFinalPaymentBooking] = useState(null);
   const [finalPaymentCheckout, setFinalPaymentCheckout] = useState(null);
   const [processingFinalPayment, setProcessingFinalPayment] = useState(false);
   const [finalPaymentError, setFinalPaymentError] = useState('');
+  const [finalPaymentSuccess, setFinalPaymentSuccess] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [activeTab, setActiveTab] = useState('upcoming');
 
@@ -428,15 +429,20 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
     setConfirmCancel(null);
   };
 
-  const handleFinalPaymentSuccess = () => {
+  const handleFinalPaymentSuccess = async () => {
+    const message = 'Final payment completed. Refreshing your bookings...';
+    setFinalPaymentSuccess(message);
+    setFinalPaymentError('');
+    setFinalPaymentCheckout(null);
     showToast?.('Final payment completed.');
-    window.location.reload();
+    await onRefreshBookings?.();
   };
 
   const handleOpenFinalPayment = async (booking) => {
     if (!booking?.id) return;
     setProcessingFinalPayment(true);
     setFinalPaymentError('');
+    setFinalPaymentSuccess('');
     setFinalPaymentCheckout(null);
     try {
       const paymentIntent = await depositApi.getFinalClientSecret(booking.id);
@@ -593,6 +599,7 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
               setFinalPaymentBooking(null);
               setFinalPaymentCheckout(null);
               setFinalPaymentError('');
+              setFinalPaymentSuccess('');
             }
           }}
         >
@@ -662,6 +669,12 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
               <ErrorMessage message={finalPaymentError} />
             ) : null}
 
+            {finalPaymentSuccess ? (
+              <div className="eyf-success-box" role="status">
+                {finalPaymentSuccess}
+              </div>
+            ) : null}
+
             {finalPaymentCheckout?.clientSecret ? (
               <BookingCheckout
                 clientSecret={finalPaymentCheckout.clientSecret}
@@ -692,6 +705,7 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
                   setFinalPaymentBooking(null);
                   setFinalPaymentCheckout(null);
                   setFinalPaymentError('');
+                  setFinalPaymentSuccess('');
                 }}
                 disabled={processingFinalPayment}
               >
@@ -735,50 +749,95 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
           />
         ) : (
           <div className="eyf-stack" style={{ gap: '0.75rem' }}>
-            {activeBookings.map((booking) => (
-              <article
-                key={booking.id}
-                className="eyf-card"
-                style={{
-                  padding: '1.25rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  border: '1px solid var(--border)',
-                }}
-                onClick={() => setSelectedBooking(booking)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setSelectedBooking(booking);
-                }}
-                role="button"
-                tabIndex={0}
-              >
-                <div className="eyf-row eyf-row--between eyf-row--start">
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{booking.studio?.name || 'Studio'}</h3>
-                    <p className="eyf-muted" style={{ margin: '0.35rem 0 0', fontSize: '0.9rem' }}>
-                      {booking.date} · {booking.time} · {booking.sessionType} · {booking.hours}hr
-                    </p>
-                    <BookingLocationDetails booking={booking} />
+            {activeBookings.map((booking) => {
+              const showFinalPaymentAction =
+                booking.status === 'AWAITING_FINAL_PAYMENT' && !isFinalPaymentPaid(booking);
+              const remainingBalance = getFinalPaymentDueAmount(booking);
+
+              return (
+                <article
+                  key={booking.id}
+                  className="eyf-card"
+                  style={{
+                    padding: '1.25rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    border: '1px solid var(--border)',
+                  }}
+                  onClick={() => setSelectedBooking(booking)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setSelectedBooking(booking);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="eyf-row eyf-row--between eyf-row--start">
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{booking.studio?.name || 'Studio'}</h3>
+                      <p className="eyf-muted" style={{ margin: '0.35rem 0 0', fontSize: '0.9rem' }}>
+                        {booking.date} · {booking.time} · {booking.sessionType} · {booking.hours}hr
+                      </p>
+                      <BookingLocationDetails booking={booking} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                      <strong style={{ fontSize: '1.1rem' }}>${booking.total?.toFixed(2)}</strong>
+                      {showFinalPaymentAction && (
+                        <span className="eyf-badge eyf-badge--amber" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
+                          FINAL DUE
+                        </span>
+                      )}
+                      {isFinalPaymentPaid(booking) && (
+                        <span className="eyf-badge eyf-badge--sage" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
+                          PAID
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
-                    <strong style={{ fontSize: '1.1rem' }}>${booking.total?.toFixed(2)}</strong>
-                    {booking.depositPaid && !isFinalPaymentPaid(booking) && hasFinalPaymentRequest(booking) && (
-                      <span className="eyf-badge eyf-badge--amber" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
-                        FINAL DUE
-                      </span>
-                    )}
-                    {isFinalPaymentPaid(booking) && (
-                      <span className="eyf-badge eyf-badge--sage" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
-                        PAID
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <p style={{ margin: '0.75rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  Click to view details
-                </p>
-              </article>
-            ))}
+
+                  {showFinalPaymentAction ? (
+                    <div
+                      className="eyf-card"
+                      style={{
+                        marginTop: '1rem',
+                        padding: '0.9rem 1rem',
+                        background: 'rgba(251, 191, 36, 0.08)',
+                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                        display: 'grid',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      <div className="eyf-row eyf-row--between" style={{ gap: '0.75rem' }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 700 }}>Remaining balance due</p>
+                          <p className="eyf-muted" style={{ margin: '0.2rem 0 0', fontSize: '0.88rem' }}>
+                            Pay ${remainingBalance.toFixed(2)} to complete this booking.
+                          </p>
+                        </div>
+                        <strong style={{ color: 'var(--mint)', fontSize: '1.05rem' }}>
+                          ${remainingBalance.toFixed(2)}
+                        </strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="eyf-button"
+                        style={{ justifySelf: 'start' }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleOpenFinalPayment(booking);
+                        }}
+                        disabled={processingFinalPayment}
+                      >
+                        {processingFinalPayment ? 'Loading payment...' : 'Pay remaining balance'}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <p style={{ margin: '0.75rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                    Click to view details
+                  </p>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1345,6 +1404,7 @@ export function ClientDashboard() {
                 currentUserId={currentUser?.id}
                 reviewedStudioIds={reviewedStudioIds}
                 showToast={showToast}
+                onRefreshBookings={fetchData}
               />
 
               {favorites.length > 0 ? (
