@@ -303,9 +303,7 @@ export default function BookingPage() {
       .then((data) => {
         setStudio(data);
 
-        const types = Array.isArray(data.sessionTypes) && data.sessionTypes.length
-          ? data.sessionTypes
-          : (Array.isArray(data.services) ? data.services.map((s) => s.name).filter(Boolean) : []);
+        const types = Array.isArray(data.sessionTypes) ? data.sessionTypes : [];
 
         setSessionType(types[0] || '');
         setStudioLoading(false);
@@ -337,15 +335,9 @@ export default function BookingPage() {
     );
   }
 
-  const availableSessionTypes = (() => {
-    if (Array.isArray(studio.sessionTypes) && studio.sessionTypes.length) {
-      return studio.sessionTypes;
-    }
-    const serviceNames = Array.isArray(studio.services)
-      ? studio.services.map((s) => s.name).filter(Boolean)
-      : [];
-    return serviceNames;
-  })();
+  const availableSessionTypes = Array.isArray(studio.sessionTypes) && studio.sessionTypes.length
+    ? studio.sessionTypes
+    : [];
 
   const noSessionTypes = availableSessionTypes.length === 0;
 
