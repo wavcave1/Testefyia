@@ -86,6 +86,8 @@ export const bookingsApi = {
       requiresManualPayment: response?.requiresManualPayment ?? booking?.requiresManualPayment ?? false,
       finalPaymentDue: response?.finalPaymentDue ?? booking?.finalPaymentDue ?? null,
       autoChargeAttempted: response?.autoChargeAttempted ?? booking?.autoChargeAttempted ?? false,
+      finalPaymentClientSecret: response?.finalPaymentClientSecret ?? null,
+      finalPaymentIntentId: response?.finalPaymentIntentId ?? booking?.finalPaymentIntentId ?? null,
     };
   },
 };

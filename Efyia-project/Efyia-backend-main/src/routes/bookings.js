@@ -623,6 +623,8 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
               requiresManualPayment: true,
               autoChargeAttempted: autoChargeResult.reason !== 'no_saved_method',
               finalPaymentDue: updated.finalPaymentDue,
+              finalPaymentClientSecret: manualResult.clientSecret,
+              finalPaymentIntentId: manualResult.intentId,
             });
           } catch (paymentErr) {
             console.error('[bookings] manual payment intent creation failed:', paymentErr.message);

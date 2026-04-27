@@ -526,7 +526,7 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
               );
             }
 
-            if (depositPaid && !finalPaymentPaid && finalPaymentIntentId) {
+            if ((status === 'AWAITING_FINAL_PAYMENT' || (depositPaid && finalPaymentIntentId)) && !finalPaymentPaid) {
               actions.push(
                 <button
                   key="payment"
@@ -540,7 +540,7 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
               );
             }
 
-            if (depositPaid && !finalPaymentPaid && !finalPaymentIntentId) {
+            if (depositPaid && !finalPaymentPaid && !finalPaymentIntentId && status !== 'AWAITING_FINAL_PAYMENT') {
               actions.push(
                 <div key="payment-pending" className="eyf-muted" style={{ fontSize: '0.88rem' }}>
                   Final payment has not been requested by the studio yet.
@@ -743,7 +743,9 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
                   padding: '1.25rem',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  border: '1px solid var(--border)',
+                  border: booking.status === 'AWAITING_FINAL_PAYMENT' && !isFinalPaymentPaid(booking)
+                    ? '1px solid var(--amber, #f59e0b)'
+                    : '1px solid var(--border)',
                 }}
                 onClick={() => setSelectedBooking(booking)}
                 onKeyDown={(e) => {
@@ -762,7 +764,12 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
                     <strong style={{ fontSize: '1.1rem' }}>${booking.total?.toFixed(2)}</strong>
-                    {booking.depositPaid && !isFinalPaymentPaid(booking) && hasFinalPaymentRequest(booking) && (
+                    {booking.status === 'AWAITING_FINAL_PAYMENT' && !isFinalPaymentPaid(booking) && (
+                      <span className="eyf-badge eyf-badge--amber" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
+                        BALANCE DUE
+                      </span>
+                    )}
+                    {booking.depositPaid && !isFinalPaymentPaid(booking) && hasFinalPaymentRequest(booking) && booking.status !== 'AWAITING_FINAL_PAYMENT' && (
                       <span className="eyf-badge eyf-badge--amber" style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem' }}>
                         FINAL DUE
                       </span>
@@ -774,9 +781,34 @@ function ClientBookingRows({ bookings, onCancel, currentUserId, reviewedStudioId
                     )}
                   </div>
                 </div>
-                <p style={{ margin: '0.75rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  Click to view details
-                </p>
+                {booking.status === 'AWAITING_FINAL_PAYMENT' && !isFinalPaymentPaid(booking) ? (
+                  <div
+                    style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    role="presentation"
+                  >
+                    <span style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
+                      Remaining balance:{' '}
+                      <strong style={{ color: 'var(--foreground)' }}>
+                        ${getFinalPaymentDueAmount(booking).toFixed(2)}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="eyf-button eyf-button--primary"
+                      style={{ fontSize: '0.875rem', padding: '0.45rem 1rem' }}
+                      disabled={processingFinalPayment}
+                      onClick={() => handleOpenFinalPayment(booking)}
+                    >
+                      {processingFinalPayment ? 'Loading…' : 'Pay remaining balance'}
+                    </button>
+                  </div>
+                ) : (
+                  <p style={{ margin: '0.75rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                    Click to view details
+                  </p>
+                )}
               </article>
             ))}
           </div>
