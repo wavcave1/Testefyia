@@ -62,7 +62,7 @@ function calculateBalance(booking) {
   const deposit = booking.depositAmount || 0;
 
   if (deposit === 0) {
-    // Full payment booking (already paid up front)
+    // Full-payment booking — already paid up front via the initial PaymentIntent.
     return {
       totalBalance: 0,
       depositAmount: 0,
@@ -73,10 +73,10 @@ function calculateBalance(booking) {
     };
   }
 
-  // Deposit booking - validate deposit is paid
+  // Deposit booking — validate deposit is paid before allowing completion.
   const hasSuccessfulDepositTxn = Array.isArray(booking.transactions)
     && booking.transactions.some(
-      (txn) => txn.status === 'SUCCEEDED' && txn.paymentType === 'DEPOSIT'
+      (txn) => txn.status === 'SUCCEEDED' && txn.paymentType === 'DEPOSIT',
     );
 
   if (!booking.depositPaid && !hasSuccessfulDepositTxn) {
@@ -86,40 +86,81 @@ function calculateBalance(booking) {
     };
   }
 
-  const remaining = total - deposit;
+  // If the final payment was already captured (webhook or prior auto-charge),
+  // treat the remaining balance as zero so completion proceeds immediately.
+  if (booking.finalPaymentPaid) {
+    return {
+      totalBalance: 0,
+      depositAmount: deposit,
+      finalPaymentAmount: 0,
+      hasDeposit: true,
+      requiresPayment: false,
+      valid: true,
+    };
+  }
+
+  const remaining = Math.round((total - deposit) * 100) / 100;
   return {
     totalBalance: remaining,
     depositAmount: deposit,
     finalPaymentAmount: remaining,
     hasDeposit: true,
-    requiresPayment: remaining > 0 && !booking.finalPaymentPaid,
+    requiresPayment: remaining > 0,
     valid: true,
   };
 }
 
-// Helper: Attempt to auto-charge the remaining balance
+// Helper: Attempt to auto-charge the remaining balance off-session.
+//
+// Resolution order for the payment method to charge:
+//   1. booking.stripePaymentMethodId  — set by webhook when deposit/full payment succeeded
+//   2. user.stripePaymentMethodId     — global card snapshot saved by webhook, only if it
+//      belongs to this studio (customers are scoped per connected account)
+//
+// Resolution order for the Stripe customer:
+//   1. booking.stripeCustomerId
+//   2. user.stripeCustomerId (when the saved card is for this studio)
 async function attemptAutoCharge(booking, amountCents, studio) {
-  if (!booking.stripePaymentMethodId) {
-    return { succeeded: false, reason: 'no_saved_method' };
-  }
-
-  // Off-session reuse of a saved payment method requires the customer the
-  // method was attached to. Prefer the customer recorded on the booking;
-  // fall back to the user's saved customer if the saved card is for this
-  // same studio (customers are scoped per connected account).
+  let paymentMethodId = booking.stripePaymentMethodId;
   let customerId = booking.stripeCustomerId;
-  if (!customerId) {
+
+  // Fall back to the user-level saved card when the booking doesn't have one.
+  // This happens when the webhook fired after the initial payment but the
+  // booking record wasn't updated in time (race) or the snapshot only landed
+  // on the user model.
+  if (!paymentMethodId || !customerId) {
     const user = await prisma.user.findUnique({
       where: { id: booking.userId },
-      select: { stripeCustomerId: true, stripePaymentMethodStudioId: true },
+      select: {
+        stripePaymentMethodId: true,
+        stripeCustomerId: true,
+        stripePaymentMethodStudioId: true,
+      },
     });
-    if (user?.stripeCustomerId && user.stripePaymentMethodStudioId === studio.id) {
-      customerId = user.stripeCustomerId;
+
+    // Only reuse the user's saved card if it was captured for this studio;
+    // payment methods are scoped to the connected account they were created on.
+    if (user?.stripePaymentMethodStudioId === studio.id) {
+      if (!paymentMethodId && user.stripePaymentMethodId) {
+        paymentMethodId = user.stripePaymentMethodId;
+      }
+      if (!customerId && user.stripeCustomerId) {
+        customerId = user.stripeCustomerId;
+      }
+    }
+
+    // Persist the resolved customer back to the booking so future calls don't
+    // need to re-query the user.
+    if (customerId && !booking.stripeCustomerId) {
       await prisma.booking.update({
         where: { id: booking.id },
         data: { stripeCustomerId: customerId },
       });
     }
+  }
+
+  if (!paymentMethodId) {
+    return { succeeded: false, reason: 'no_saved_method' };
   }
   if (!customerId) {
     return { succeeded: false, reason: 'no_saved_customer' };
@@ -128,7 +169,7 @@ async function attemptAutoCharge(booking, amountCents, studio) {
   try {
     const paymentResult = await createOffSessionCharge(
       amountCents,
-      booking.stripePaymentMethodId,
+      paymentMethodId,
       studio.stripeConnectAccountId,
       {
         bookingId: String(booking.id),
@@ -148,6 +189,8 @@ async function attemptAutoCharge(booking, amountCents, studio) {
     }
 
     return {
+      // Stripe returns 'succeeded' for synchronous charges; 'processing' means
+      // the charge is async and the webhook will finalise it.
       succeeded: paymentResult.status === 'succeeded',
       intentId: paymentResult.id,
       status: paymentResult.status,
@@ -495,101 +538,54 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied.' });
     }
 
-    // Handle COMPLETED status with new payment flow
+    // ── COMPLETED status: enforce payment before marking the booking done ────────
+    //
+    // Decision tree:
+    //   1. Full-payment booking (no deposit)          → balance = 0 → complete immediately
+    //   2. Deposit booking, final already paid         → balance = 0 → complete immediately
+    //   3. Deposit booking, balance due, card on file  → attempt off-session charge
+    //        a. charge succeeds                        → complete immediately (autoChargeSucceeded=true)
+    //        b. charge fails / async                   → fall through to manual path
+    //   4. Deposit booking, balance due, no card       → create PaymentIntent for the client
+    //        → return AWAITING_FINAL_PAYMENT (owner must wait; client pays from dashboard)
+    let autoChargeSucceeded = false;
+
     if (status === 'COMPLETED') {
       const balanceInfo = calculateBalance(booking);
 
-      // If balance calculation failed, return error
       if (!balanceInfo.valid) {
         return res.status(400).json({ error: balanceInfo.error });
       }
 
-      // If no payment required, mark complete immediately
-      if (balanceInfo.totalBalance === 0) {
-        // Continue to update booking below
-      } else {
-        // Balance due - handle payment processing
+      if (balanceInfo.totalBalance > 0) {
+        // There is an outstanding balance — payment must be collected first.
         const amountCents = Math.round(balanceInfo.finalPaymentAmount * 100);
 
-        // Check if Stripe is configured
         if (!booking.studio.stripeConnectAccountId || booking.studio.stripeConnectStatus !== 'ACTIVE') {
           return res.status(400).json({
             error: 'Stripe is not configured for this studio. Final payment cannot be processed.',
           });
         }
 
-        // Try auto-charge if payment method is saved
-        if (booking.stripePaymentMethodId) {
-          const autoChargeResult = await attemptAutoCharge(booking, amountCents, booking.studio);
+        // Always attempt auto-charge first. attemptAutoCharge now resolves the
+        // payment method from the booking OR the user's saved card (same studio).
+        const autoChargeResult = await attemptAutoCharge(booking, amountCents, booking.studio);
 
-          if (autoChargeResult.succeeded) {
-            // Auto-charge succeeded - mark COMPLETED
-            status = 'COMPLETED';
-          } else {
-            // Auto-charge failed - create manual intent and mark AWAITING_FINAL_PAYMENT
-            try {
-              const manualResult = await createManualPaymentIntent(
-                booking,
-                booking.studio,
-                amountCents
-              );
-
-              // Update booking with intent ID and status
-              const updated = await prisma.booking.update({
-                where: { id: booking.id },
-                data: {
-                  status: 'AWAITING_FINAL_PAYMENT',
-                  finalPaymentIntentId: manualResult.intentId,
-                },
-                include: {
-                  studio: {
-                    select: {
-                      id: true, name: true,
-                      addressLine1: true, city: true, state: true, postalCode: true, zip: true,
-                      lat: true, lng: true, publicLocationLabel: true,
-                    },
-                  },
-                  user: { select: { id: true, name: true, email: true } },
-                },
-              });
-
-              // Send payment reminder email
-              try {
-                await emailService.sendFinalPaymentReminder({
-                  to: updated.user.email,
-                  customerName: updated.user.name,
-                  studioName: updated.studio.name,
-                  bookingId: updated.id,
-                  amount: balanceInfo.finalPaymentAmount,
-                  actorUserId: req.user.id,
-                  studioId: updated.studio.id,
-                });
-              } catch (emailErr) {
-                console.error('[email] final payment reminder email failed:', emailErr.message);
-              }
-
-              return res.json({
-                ...updated,
-                requiresManualPayment: true,
-                finalPaymentDue: updated.finalPaymentDue,
-              });
-            } catch (paymentErr) {
-              console.error('[bookings] manual payment intent creation failed:', paymentErr.message);
-              return res.status(500).json({
-                error: 'Failed to create payment request. Please try again.',
-              });
-            }
-          }
+        if (autoChargeResult.succeeded) {
+          // Synchronous charge succeeded — mark COMPLETED below and set the flag
+          // so the final prisma.update also records finalPaymentPaid.
+          autoChargeSucceeded = true;
         } else {
-          // No saved payment method - create manual intent and mark AWAITING_FINAL_PAYMENT
+          // Auto-charge unavailable or failed (no card, 3DS required, declined).
+          // Create a PaymentIntent the client can complete from their dashboard,
+          // then return AWAITING_FINAL_PAYMENT — do NOT mark COMPLETED yet.
           try {
             const manualResult = await createManualPaymentIntent(
               booking,
               booking.studio,
-              amountCents
+              amountCents,
             );
 
-            // Update booking with intent ID and status
             const updated = await prisma.booking.update({
               where: { id: booking.id },
               data: {
@@ -608,7 +604,6 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
               },
             });
 
-            // Send payment reminder email
             try {
               await emailService.sendFinalPaymentReminder({
                 to: updated.user.email,
@@ -626,6 +621,7 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
             return res.json({
               ...updated,
               requiresManualPayment: true,
+              autoChargeAttempted: autoChargeResult.reason !== 'no_saved_method',
               finalPaymentDue: updated.finalPaymentDue,
             });
           } catch (paymentErr) {
@@ -636,6 +632,7 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
           }
         }
       }
+      // balanceInfo.totalBalance === 0 falls through — booking is updated below.
     }
 
     if (booking.status === 'CANCELLED') {
@@ -703,7 +700,13 @@ router.patch('/:id/status', requireAuth, async (req, res, next) => {
 
     const updated = await prisma.booking.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        // When the off-session auto-charge succeeded synchronously we write
+        // finalPaymentPaid here so the booking is fully consistent without
+        // waiting for the webhook to arrive.
+        ...(autoChargeSucceeded ? { finalPaymentPaid: true } : {}),
+      },
       include: {
         studio: {
           select: {
