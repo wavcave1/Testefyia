@@ -328,10 +328,17 @@ export default function BookingDirectPage() {
     );
   }
 
-  const availableSessionTypes =
-    Array.isArray(studio.sessionTypes) && studio.sessionTypes.length
-      ? studio.sessionTypes
-      : (studio.services || []).map((s) => s.name).filter(Boolean);
+  const availableSessionTypes = (() => {
+    if (Array.isArray(studio.sessionTypes) && studio.sessionTypes.length) {
+      return studio.sessionTypes;
+    }
+    const serviceNames = Array.isArray(studio.services)
+      ? studio.services.map((s) => s.name).filter(Boolean)
+      : [];
+    return serviceNames;
+  })();
+
+  const noSessionTypes = availableSessionTypes.length === 0;
 
   const pricePerHour = getPriceForSession(studio, sessionType) || studio.pricePerHour || 0;
   const selectedService = getServiceForSession(studio, sessionType);
@@ -559,21 +566,32 @@ export default function BookingDirectPage() {
                     <select
                       value={sessionType || ''}
                       onChange={(e) => setSessionType(e.target.value)}
+                      disabled={noSessionTypes}
                     >
-                      <option value="">Select session type</option>
-                      {availableSessionTypes.map((item) => {
-                        const servicePrice = getPriceForSession(studio, item);
+                      {noSessionTypes ? (
+                        <option value="" disabled>No session types available</option>
+                      ) : (
+                        <>
+                          <option value="">Select session type</option>
+                          {availableSessionTypes.map((item) => {
+                            const servicePrice = getPriceForSession(studio, item);
 
-                        return (
-                          <option key={item} value={item}>
-                            {item} — ${servicePrice}/hr
-                          </option>
-                        );
-                      })}
+                            return (
+                              <option key={item} value={item}>
+                                {item} — ${servicePrice}/hr
+                              </option>
+                            );
+                          })}
+                        </>
+                      )}
                     </select>
                   </label>
 
-                  {fieldErrors.sessionType ? (
+                  {noSessionTypes ? (
+                    <p className="eyf-field-error">
+                      This studio has not set up any session types yet. Please contact them directly.
+                    </p>
+                  ) : fieldErrors.sessionType ? (
                     <p className="eyf-field-error">{fieldErrors.sessionType}</p>
                   ) : null}
 
@@ -678,7 +696,7 @@ export default function BookingDirectPage() {
                   type="button"
                   className="eyf-button"
                   onClick={goToStep2}
-                  disabled={submitting || checkingAvailability}
+                  disabled={submitting || checkingAvailability || noSessionTypes}
                 >
                   {checkingAvailability ? 'Checking availability...' : 'Continue'}
                 </button>
